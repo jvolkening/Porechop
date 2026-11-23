@@ -4,6 +4,31 @@ Porechop is a tool for finding and removing adapters from [Oxford Nanopore](http
 
 Porechop also supports demultiplexing of Nanopore reads that were barcoded with the [Native Barcoding Kit](https://store.nanoporetech.com/native-barcoding-kit-1d.html), [PCR Barcoding Kit](https://store.nanoporetech.com/pcr-barcoding-kit-96.html) or [Rapid Barcoding Kit](https://store.nanoporetech.com/rapid-barcoding-sequencing-kit.html).
 
+## Rust implementation
+
+The `rust/` directory contains a parallel Rust implementation, built with Rust 1.88 or later
+and a C++14 compiler:
+
+```bash
+cargo build --release --manifest-path rust/Cargo.toml
+rust/target/release/porechop-rs -i reads.fastq.gz -o trimmed.fastq.gz -t 8
+rust/target/release/porechop-rs --help
+```
+
+The executable does not require Python at runtime. It retains Porechop's bundled SeqAn/C++
+alignment kernel to preserve alignment behavior; read handling, adapter selection, trimming,
+barcode calling and parallel scheduling are implemented in Rust. It accepts the existing options
+plus `--adapter_file` and `--write_default_adapters`, described below. Progress messages are
+similar, but not byte-for-byte identical to the Python program.
+
+To compare the two implementations on the bundled fixtures after building both (`make` and
+the Cargo command above), run `python3 rust/tests/compatibility.py`.
+
+As an illustrative benchmark, repeating `test/test_one_adapter_set.fastq` 40 times (360 reads)
+and running the default workflow with `-t 2 -v 0` took 3.65 seconds with Python and 2.17 seconds
+with Rust (about 1.7x faster); the read outputs were identical. Real-world performance depends
+on read lengths, adapter sets, thread count and compression.
+
 
 ### Oct 2018 update: Porechop is officially unsupported
 

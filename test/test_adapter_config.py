@@ -4,6 +4,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from collections import namedtuple
 
 from porechop.adapters import ADAPTERS, BARCODE_CONTEXTS, Adapter
 from porechop.adapter_config import load_adapters
@@ -12,12 +13,15 @@ from porechop.porechop import add_full_barcode_adapter_sets
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 RUNNER = os.path.join(ROOT, 'porechop-runner.py')
+Result = namedtuple('Result', 'returncode stdout stderr')
 
 
 class TestAdapterConfig(unittest.TestCase):
     def run_porechop(self, *args):
-        return subprocess.run([sys.executable, RUNNER] + list(args), stdout=subprocess.PIPE,
-                              stderr=subprocess.PIPE, universal_newlines=True)
+        process = subprocess.Popen([sys.executable, RUNNER] + list(args), stdout=subprocess.PIPE,
+                                   stderr=subprocess.PIPE, universal_newlines=True)
+        stdout, stderr = process.communicate()
+        return Result(process.returncode, stdout, stderr)
 
     def test_default_export_round_trip_and_output(self):
         with tempfile.TemporaryDirectory() as directory:
