@@ -463,36 +463,48 @@ ADAPTERS = [Adapter('SQK-NSK007',
                     end_sequence=('BC96_rev', 'ATGGTGGACTCTATGACCGTTCAG'))]
 
 
-def make_full_native_barcode_adapter(barcode_num):
-    barcode = [x for x in ADAPTERS if x.name == 'Barcode ' + str(barcode_num) + ' (reverse)'][0]
+BARCODE_CONTEXTS = {
+    'native_start_prefix': 'AATGTACTTCGTTCAGTTACGTATTGCTAAGGTTAA',
+    'native_start_suffix': 'CAGCACCT',
+    'native_end_prefix': 'AGGTGCTG',
+    'native_end_suffix': 'TTAACCTTAGCAATACGTAACTGAACGAAGT',
+    'rapid_old_prefix': 'AATGTACTTCGTTCAGTTACGTATTGCT',
+    'rapid_new_prefix': 'AATGTACTTCGTTCAGTTACGGCTTGGGTGTTTAACC',
+    'rapid_suffix': 'GTTTTCGCATTTATCGTGAAACGCTTTCGCGTTTTTCGTGCGCCGCTTCA',
+}
+
+
+def make_full_native_barcode_adapter(barcode_num, barcode=None, contexts=BARCODE_CONTEXTS):
+    if barcode is None:
+        barcode = [x for x in ADAPTERS if x.name == 'Barcode ' + str(barcode_num) + ' (reverse)'][0]
     start_barcode_seq = barcode.start_sequence[1]
     end_barcode_seq = barcode.end_sequence[1]
 
-    start_full_seq = 'AATGTACTTCGTTCAGTTACGTATTGCTAAGGTTAA' + start_barcode_seq + 'CAGCACCT'
-    end_full_seq = 'AGGTGCTG' + end_barcode_seq + 'TTAACCTTAGCAATACGTAACTGAACGAAGT'
+    start_full_seq = contexts['native_start_prefix'] + start_barcode_seq + contexts['native_start_suffix']
+    end_full_seq = contexts['native_end_prefix'] + end_barcode_seq + contexts['native_end_suffix']
 
     return Adapter('Native barcoding ' + str(barcode_num) + ' (full sequence)',
                    start_sequence=('NB' + '%02d' % barcode_num + '_start', start_full_seq),
                    end_sequence=('NB' + '%02d' % barcode_num + '_end', end_full_seq))
 
 
-def make_old_full_rapid_barcode_adapter(barcode_num):  # applies to SQK-RBK001
-    barcode = [x for x in ADAPTERS if x.name == 'Barcode ' + str(barcode_num) + ' (forward)'][0]
+def make_old_full_rapid_barcode_adapter(barcode_num, barcode=None, contexts=BARCODE_CONTEXTS):
+    if barcode is None:
+        barcode = [x for x in ADAPTERS if x.name == 'Barcode ' + str(barcode_num) + ' (forward)'][0]
     start_barcode_seq = barcode.start_sequence[1]
 
-    start_full_seq = 'AATGTACTTCGTTCAGTTACG' + 'TATTGCT' + start_barcode_seq + \
-                     'GTTTTCGCATTTATCGTGAAACGCTTTCGCGTTTTTCGTGCGCCGCTTCA'
+    start_full_seq = contexts['rapid_old_prefix'] + start_barcode_seq + contexts['rapid_suffix']
 
     return Adapter('Rapid barcoding ' + str(barcode_num) + ' (full sequence, old)',
                    start_sequence=('RB' + '%02d' % barcode_num + '_full', start_full_seq))
 
 
-def make_new_full_rapid_barcode_adapter(barcode_num):  # applies to SQK-RBK004
-    barcode = [x for x in ADAPTERS if x.name == 'Barcode ' + str(barcode_num) + ' (forward)'][0]
+def make_new_full_rapid_barcode_adapter(barcode_num, barcode=None, contexts=BARCODE_CONTEXTS):
+    if barcode is None:
+        barcode = [x for x in ADAPTERS if x.name == 'Barcode ' + str(barcode_num) + ' (forward)'][0]
     start_barcode_seq = barcode.start_sequence[1]
 
-    start_full_seq = 'AATGTACTTCGTTCAGTTACG' + 'GCTTGGGTGTTTAACC' + start_barcode_seq + \
-                     'GTTTTCGCATTTATCGTGAAACGCTTTCGCGTTTTTCGTGCGCCGCTTCA'
+    start_full_seq = contexts['rapid_new_prefix'] + start_barcode_seq + contexts['rapid_suffix']
 
     return Adapter('Rapid barcoding ' + str(barcode_num) + ' (full sequence, new)',
                    start_sequence=('RB' + '%02d' % barcode_num + '_full', start_full_seq))

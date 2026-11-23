@@ -229,7 +229,20 @@ They are:
 * Native barcoding
 * Rapid barcoding
 
-If you want to add your own adapter sequences to Porechop, you can do so by editing the [adapters.py](../master/porechop/adapters.py) file (instructions are in that file). And if you know of any adapter sequences that I've missed, please let me know and I'll add them!
+To customize the sequences, export the defaults, edit the JSON file, and supply it when running:
+
+```bash
+porechop --write_default_adapters adapters.json
+porechop -i reads.fastq --adapter_file adapters.json -o trimmed.fastq
+```
+
+The export refuses to overwrite an existing file. `--adapter_file` replaces the defaults rather
+than extending them. Each entry has a unique `name` and at least one of `start` and `end`; each
+end has a `name` and a DNA `sequence` (A, C, G, T or N). Barcode set names start with `Barcode `
+and include `(forward)` or `(reverse)`; both ends are required and reverse barcode start names
+must contain `_rev`. The `barcode_contexts` fields control the flanking sequences used to build
+full native and rapid barcode adapters. Full-sequence expansion still uses the original kit and
+barcode naming conventions.
 
 
 
@@ -239,7 +252,8 @@ If you want to add your own adapter sequences to Porechop, you can do so by edit
 usage: porechop -i INPUT [-o OUTPUT] [--format {auto,fasta,fastq,fasta.gz,fastq.gz}] [-v VERBOSITY]
                 [-t THREADS] [-b BARCODE_DIR] [--barcode_threshold BARCODE_THRESHOLD]
                 [--barcode_diff BARCODE_DIFF] [--require_two_barcodes] [--untrimmed]
-                [--discard_unassigned] [--adapter_threshold ADAPTER_THRESHOLD]
+                [--discard_unassigned] [--adapter_file ADAPTER_FILE]
+                [--write_default_adapters FILE] [--adapter_threshold ADAPTER_THRESHOLD]
                 [--check_reads CHECK_READS] [--scoring_scheme SCORING_SCHEME] [--end_size END_SIZE]
                 [--min_trim_size MIN_TRIM_SIZE] [--extra_end_trim EXTRA_END_TRIM]
                 [--end_threshold END_THRESHOLD] [--no_split] [--discard_middle]
@@ -289,6 +303,8 @@ Barcode binning settings:
 Adapter search settings:
   Control how the program determines which adapter sets are present
 
+  --adapter_file ADAPTER_FILE    JSON file containing adapter sets (replaces defaults)
+  --write_default_adapters FILE  Write the default adapter sets to a new JSON file and exit
   --adapter_threshold ADAPTER_THRESHOLD
                                  An adapter set has to have at least this percent identity to be
                                  labelled as present and trimmed off (0 to 100) (default: 90.0)

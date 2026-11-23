@@ -24,20 +24,32 @@ import re
 from multiprocessing.dummy import Pool as ThreadPool
 from collections import defaultdict
 from .misc import load_fasta_or_fastq, print_table, red, bold_underline, MyHelpFormatter, int_to_str
-from .adapters import ADAPTERS, make_full_native_barcode_adapter,\
+from .adapters import ADAPTERS, BARCODE_CONTEXTS, make_full_native_barcode_adapter,\
     make_old_full_rapid_barcode_adapter, make_new_full_rapid_barcode_adapter
+from .adapter_config import load_adapters, write_defaults
 from .nanopore_read import NanoporeRead
 from .version import __version__
 
 
 def main():
     args = get_arguments()
+    if args.write_default_adapters:
+        try:
+            write_defaults(args.write_default_adapters)
+        except OSError as error:
+            sys.exit('Error writing adapter configuration: ' + str(error))
+        return
+    try:
+        adapters, barcode_contexts = load_adapters(args.adapter_file) if args.adapter_file \
+            else (ADAPTERS, BARCODE_CONTEXTS)
+    except (OSError, ValueError) as error:
+        sys.exit('Error reading adapter configuration: ' + str(error))
     reads, check_reads, read_type = load_reads(args.input, args.verbosity, args.print_dest,
                                                args.check_reads)
 
     matching_sets = find_matching_adapter_sets(check_reads, args.verbosity, args.end_size,
                                                args.scoring_scheme_vals, args.print_dest,
-                                               args.adapter_threshold, args.threads)
+                                               args.adapter_threshold, args.threads, adapters)
     matching_sets = fix_up_1d2_sets(matching_sets)
 
     if args.barcode_dir:
@@ -46,8 +58,8 @@ def main():
     else:
         forward_or_reverse_barcodes = None
 
-    display_adapter_set_results(matching_sets, args.verbosity, args.print_dest)
-    matching_sets = add_full_barcode_adapter_sets(matching_sets)
+    display_adapter_set_results(matching_sets, args.verbosity, args.print_dest, adapters)
+    matching_sets = add_full_barcode_adapter_sets(matching_sets, barcode_contexts)
 
     if args.verbosity > 0:
         print('\n', file=args.print_dest)
@@ -90,7 +102,7 @@ def get_arguments():
                                                  'splitting reads with internal adapters',
                                      formatter_class=MyHelpFormatter, add_help=False)
     main_group = parser.add_argument_group('Main options')
-    main_group.add_argument('-i', '--input', required=True,
+    main_group.add_argument('-i', '--input',
                             help='FASTA/FASTQ of input reads or a directory which will be '
                                  'recursively searched for FASTQ files (required)')
     main_group.add_argument('-o', '--output',
@@ -135,6 +147,10 @@ def get_arguments():
     adapter_search_group = parser.add_argument_group('Adapter search settings',
                                                      'Control how the program determines which '
                                                      'adapter sets are present')
+    adapter_search_group.add_argument('--adapter_file',
+                                      help='JSON file containing adapter sets (replaces defaults)')
+    adapter_search_group.add_argument('--write_default_adapters', metavar='FILE',
+                                      help='Write the default adapter sets to a new JSON file and exit')
     adapter_search_group.add_argument('--adapter_threshold', type=float, default=90.0,
                                       help='An adapter set has to have at least this percent '
                                            'identity to be labelled as present and trimmed off '
@@ -192,6 +208,13 @@ def get_arguments():
                            help="Show program's version number and exit")
 
     args = parser.parse_args()
+
+    if args.write_default_adapters:
+        if args.input or args.adapter_file:
+            parser.error('--write_default_adapters cannot be combined with --input or --adapter_file')
+        return args
+    if not args.input:
+        parser.error('the following arguments are required: -i/--input')
 
     try:
         scoring_scheme = [int(x) for x in args.scoring_scheme.split(',')]
@@ -284,7 +307,7 @@ def get_albacore_barcode_from_path(albacore_path):
 
 
 def find_matching_adapter_sets(check_reads, verbosity, end_size, scoring_scheme_vals, print_dest,
-                               adapter_threshold, threads):
+                               adapter_threshold, threads, adapters=ADAPTERS):
     """
     Aligns all of the adapter sets to the start/end of reads to see which (if any) matches best.
     """
@@ -293,7 +316,7 @@ def find_matching_adapter_sets(check_reads, verbosity, end_size, scoring_scheme_
         print(bold_underline('Looking for known adapter sets'), flush=True, file=print_dest)
         output_progress_line(0, read_count, print_dest)
 
-    search_adapters = [a for a in ADAPTERS if '(full sequence)' not in a.name]
+    search_adapters = [a for a in adapters if '(full sequence)' not in a.name]
     search_adapter_count = len(search_adapters)
 
     # If single-threaded, do the work in a simple loop.
@@ -390,13 +413,13 @@ def fix_up_1d2_sets(matching_sets):
     return matching_sets
 
 
-def display_adapter_set_results(matching_sets, verbosity, print_dest):
+def display_adapter_set_results(matching_sets, verbosity, print_dest, adapters=ADAPTERS):
     if verbosity < 1:
         return
     table = [['Set', 'Best read start %ID', 'Best read end %ID']]
     row_colours = {}
     matching_set_names = [x.name for x in matching_sets]
-    search_adapters = [a for a in ADAPTERS if '(full sequence)' not in a.name]
+    search_adapters = [a for a in adapters if '(full sequence)' not in a.name]
     for adapter_set in search_adapters:
         start_score = '%.1f' % adapter_set.best_start_score
         end_score = '%.1f' % adapter_set.best_end_score
@@ -408,29 +431,33 @@ def display_adapter_set_results(matching_sets, verbosity, print_dest):
                     fixed_col_widths=[35, 8, 8])
 
 
-def add_full_barcode_adapter_sets(matching_sets):
+def add_full_barcode_adapter_sets(matching_sets, contexts=BARCODE_CONTEXTS):
     """
     This function adds some new 'full' adapter sequences based on what was already found. For
     example, if the ligation adapters and the reverse barcode adapters are found, it assumes we are
     looking at a native barcoding run and so it adds the complete native barcoding adapter
     sequences (with the barcode's upstream and downstream context included).
     """
-    matching_set_names = [x.name for x in matching_sets]
+    matching_by_name = {x.name: x for x in matching_sets}
+    matching_set_names = matching_by_name.keys()
 
     for i in range(1, 97):
 
         # Native barcode full sequences
         if all(x in matching_set_names
                for x in ['SQK-NSK007', 'Barcode ' + str(i) + ' (reverse)']):
-            matching_sets.append(make_full_native_barcode_adapter(i))
+            barcode = matching_by_name['Barcode ' + str(i) + ' (reverse)']
+            matching_sets.append(make_full_native_barcode_adapter(i, barcode, contexts))
 
         # Rapid barcode full sequences
         if all(x in matching_set_names
                for x in ['Rapid', 'Barcode ' + str(i) + ' (forward)']):
             if 'RBK004_upstream' in matching_set_names:
-                matching_sets.append(make_new_full_rapid_barcode_adapter(i))
+                barcode = matching_by_name['Barcode ' + str(i) + ' (forward)']
+                matching_sets.append(make_new_full_rapid_barcode_adapter(i, barcode, contexts))
             elif 'SQK-NSK007' in matching_set_names:
-                matching_sets.append(make_old_full_rapid_barcode_adapter(i))
+                barcode = matching_by_name['Barcode ' + str(i) + ' (forward)']
+                matching_sets.append(make_old_full_rapid_barcode_adapter(i, barcode, contexts))
 
     return matching_sets
 
